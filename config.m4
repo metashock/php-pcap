@@ -21,8 +21,8 @@ if test "$PHP_PCAP" != "no"; then
   dnl Write more examples of tests here...
 
   dnl # --with-pcap -> check with-path
-  SEARCH_PATH="/usr/local /usr"     # you might want to change this
-  SEARCH_FOR="/include/pcap.h"  # you most likely want to change this
+  SEARCH_PATH="/usr/local /usr"
+  SEARCH_FOR="/include/pcap.h"
   if test -r $PHP_PCAP/$SEARCH_FOR; then # path given as parameter
     PCAP_DIR=$PHP_PCAP
   else # search default path list
@@ -44,8 +44,8 @@ if test "$PHP_PCAP" != "no"; then
   PHP_ADD_INCLUDE($PCAP_DIR/include)
 
   dnl # --with-pcap -> check for lib and symbol presence
-  LIBNAME=pcap # you may want to change this
-  LIBSYMBOL=pcap_lib_version # you most likely want to change this 
+  LIBNAME=pcap
+  LIBSYMBOL=pcap_lib_version
 
   PHP_CHECK_LIBRARY($LIBNAME,$LIBSYMBOL,
   [
