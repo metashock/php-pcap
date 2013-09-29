@@ -34,13 +34,21 @@ ZEND_DECLARE_MODULE_GLOBALS(pcap)
 /* True global resources - no need for thread safety here */
 static int le_pcap;
 
+
+/* {{{ arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_lookupdev, 0, 0, 2)
+    ZEND_ARG_PASS_INFO(1)
+ZEND_END_ARG_INFO()
+
+
 /* {{{ pcap_functions[]
  *
  * Every user visible function must have an entry in pcap_functions[].
  */
 const zend_function_entry pcap_functions[] = {
 	PHP_FE(confirm_pcap_compiled,	NULL)		/* For testing, remove later. */
-	PHP_FE(pcap_lib_version,	NULL)		/* For testing, remove later. */
+	PHP_FE(pcap_lib_version,    NULL)
+    PHP_FE(pcap_lookupdev,  arginfo_pcap_lookupdev)
 	PHP_FE_END	/* Must be the last line in pcap_functions[] */
 };
 /* }}} */
@@ -172,6 +180,33 @@ PHP_FUNCTION(pcap_lib_version)
     const char *version = pcap_lib_version();
 	RETURN_STRING(version, 1);
 }
+
+
+PHP_FUNCTION(pcap_lookupdev)
+{
+    char *dev, errbuf[PCAP_ERRBUF_SIZE];
+    zval *userland_errbuf = NULL;
+
+    if(zend_parse_parameters(
+        ZEND_NUM_ARGS() TSRMLS_CC,
+        "z", &userland_errbuf
+    ) != SUCCESS) {
+        RETURN_FALSE;
+    }
+
+
+    convert_to_null(userland_errbuf);
+
+    dev = pcap_lookupdev(errbuf);
+    if(dev == NULL) {
+        ZVAL_STRING(userland_errbuf, errbuf, 1);
+        RETURN_FALSE;
+    } else { 
+        RETURN_STRING(dev,0);
+    }
+}
+
+
 /* }}} */
 /* The previous line is meant for vim and emacs, so it can correctly fold and 
    unfold functions in source code. See the corresponding marks just before 

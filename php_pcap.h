@@ -45,7 +45,9 @@ PHP_RSHUTDOWN_FUNCTION(pcap);
 PHP_MINFO_FUNCTION(pcap);
 
 PHP_FUNCTION(confirm_pcap_compiled);	/* For testing, remove later. */
-PHP_FUNCTION(pcap_lib_version);	/* For testing, remove later. */
+PHP_FUNCTION(pcap_lib_version);
+//PHP_FUNCTION(pcap_create());
+PHP_FUNCTION(pcap_lookupdev);
 
 /* 
   	Declare any global variables you may need between the BEGIN
