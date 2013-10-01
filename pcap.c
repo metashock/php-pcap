@@ -27,17 +27,39 @@
 #include "ext/standard/info.h"
 #include "php_pcap.h"
 
+#define le_pcap_resource_name "pcap resource"
+
 /* If you declare any globals in php_pcap.h uncomment this:
 ZEND_DECLARE_MODULE_GLOBALS(pcap)
 */
 
 /* True global resources - no need for thread safety here */
-static int le_pcap;
+static int le_pcap_resource;
+
+typedef struct {
+    pcap_t* pcap_handle;
+} pcap_resource;
+
 
 
 /* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_lookupdev, 0, 0, 2)
-    ZEND_ARG_PASS_INFO(1)
+    ZEND_ARG_INFO(1, errbuf)
+ZEND_END_ARG_INFO()
+
+
+/* {{{ arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_open_live, 0, 0, 5)
+    ZEND_ARG_INFO(0, dev)
+    ZEND_ARG_INFO(0, snaplen)
+    ZEND_ARG_INFO(0, promisc)
+    ZEND_ARG_INFO(0, to_ms)
+    ZEND_ARG_INFO(1, errbuf)
+ZEND_END_ARG_INFO()
+
+/* {{{ arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_datalink, 0, 0, 1)
+    ZEND_ARG_INFO(0, pcap)
 ZEND_END_ARG_INFO()
 
 
@@ -49,6 +71,8 @@ const zend_function_entry pcap_functions[] = {
 	PHP_FE(confirm_pcap_compiled,	NULL)		/* For testing, remove later. */
 	PHP_FE(pcap_lib_version,    NULL)
     PHP_FE(pcap_lookupdev,  arginfo_pcap_lookupdev)
+    PHP_FE(pcap_open_live,  arginfo_pcap_open_live)
+    PHP_FE(pcap_datalink,  arginfo_pcap_datalink)
 	PHP_FE_END	/* Must be the last line in pcap_functions[] */
 };
 /* }}} */
@@ -105,6 +129,13 @@ PHP_MINIT_FUNCTION(pcap)
 	/* If you have INI entries, uncomment these lines 
 	REGISTER_INI_ENTRIES();
 	*/
+    le_pcap_resource = zend_register_list_destructors_ex(
+        pcap_destruction_handler,
+        NULL,
+        le_pcap_resource_name,
+        module_number
+    );
+
 	return SUCCESS;
 }
 /* }}} */
@@ -152,6 +183,11 @@ PHP_MINFO_FUNCTION(pcap)
 }
 /* }}} */
 
+void pcap_destruction_handler(zend_rsrc_list_entry *rsrc TSRMLS_DC) {
+    pcap_resource *resource = (pcap_resource *) rsrc->ptr;
+    pcap_close(resource->pcap_handle);
+}
+
 
 /* Remove the following function when you have succesfully modified config.m4
    so that your module can be compiled into PHP, it exists only for testing
@@ -175,6 +211,9 @@ PHP_FUNCTION(confirm_pcap_compiled)
 }
 
 
+/* Every user-visible function in PHP should document itself in the source */
+/* {{{ proto string confirm_pcap_compiled(string arg)
+   Return a string to confirm that the module is compiled in */
 PHP_FUNCTION(pcap_lib_version)
 {
     const char *version = pcap_lib_version();
@@ -182,6 +221,9 @@ PHP_FUNCTION(pcap_lib_version)
 }
 
 
+/* Every user-visible function in PHP should document itself in the source */
+/* {{{ proto string confirm_pcap_compiled(string arg)
+   Return a string to confirm that the module is compiled in */
 PHP_FUNCTION(pcap_lookupdev)
 {
     char *dev, errbuf[PCAP_ERRBUF_SIZE];
@@ -204,6 +246,66 @@ PHP_FUNCTION(pcap_lookupdev)
     } else { 
         RETURN_STRING(dev,0);
     }
+}
+
+
+PHP_FUNCTION(pcap_open_live)
+{
+    char *dev, errbuf[PCAP_ERRBUF_SIZE];
+    int snaplen, promisc, to_ms, dev_len;
+    pcap_resource* pcap_resource;
+    zval *userland_errbuf;
+
+    if(zend_parse_parameters(
+        ZEND_NUM_ARGS() TSRMLS_CC,
+        "slllz",
+        &dev, &dev_len,
+        &snaplen,
+        &promisc,
+        &to_ms,
+        &userland_errbuf
+    ) != SUCCESS) {
+        RETURN_FALSE;
+    }
+
+    pcap_resource = emalloc(sizeof(pcap_resource));
+    pcap_resource->pcap_handle = pcap_open_live(dev, snaplen, promisc, to_ms, errbuf);
+    if(pcap_resource->pcap_handle == NULL) {
+        ZVAL_STRING(userland_errbuf, errbuf, 1);
+        RETURN_FALSE;
+    } else {
+        ZEND_REGISTER_RESOURCE(return_value, pcap_resource, le_pcap_resource);
+    }
+}
+
+
+PHP_FUNCTION(pcap_datalink)
+{
+
+    pcap_resource *resource;
+    int datalink;
+    zval *handle = NULL;
+
+    if(zend_parse_parameters(
+        ZEND_NUM_ARGS() TSRMLS_CC,
+        "r",
+        &handle
+    ) != SUCCESS) {
+        RETURN_FALSE;
+    }
+
+
+    ZEND_FETCH_RESOURCE(
+        resource,
+        pcap_resource*,
+        &handle,
+        -1,
+        le_pcap_resource_name,
+        le_pcap_resource
+    );
+
+    datalink = pcap_datalink(resource->pcap_handle);
+    RETURN_LONG(datalink);
 }
 
 
