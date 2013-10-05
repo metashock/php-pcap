@@ -12,7 +12,7 @@
   | obtain it through the world-wide-web, please send a note to          |
   | license@php.net so we can mail you a copy immediately.               |
   +----------------------------------------------------------------------+
-  | Author:                                                              |
+  | Author: Thorsten Heymann <hek2mgl@metashock.net>                     |
   +----------------------------------------------------------------------+
 */
 
@@ -27,7 +27,19 @@
 #include "ext/standard/info.h"
 #include "php_pcap.h"
 
-#define le_pcap_resource_name "pcap resource"
+#define LE_PCAP_RESOURCE_NAME "pcap handle"
+#define LE_PCAP_FILTER_RESOURCE_NAME "pcap filter"
+
+/* resource types */
+typedef struct {
+    pcap_t* pcap_handle;
+} pcap_resource;
+
+typedef struct {
+    struct bpf_program *program_handle;
+} pcap_filter_resource;
+
+
 
 /* If you declare any globals in php_pcap.h uncomment this:
 ZEND_DECLARE_MODULE_GLOBALS(pcap)
@@ -35,15 +47,19 @@ ZEND_DECLARE_MODULE_GLOBALS(pcap)
 
 /* True global resources - no need for thread safety here */
 static int le_pcap_resource;
-
-typedef struct {
-    pcap_t* pcap_handle;
-} pcap_resource;
-
-
+static int le_pcap_filter_resource;
 
 /* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_lookupdev, 0, 0, 2)
+    ZEND_ARG_INFO(1, errbuf)
+ZEND_END_ARG_INFO()
+
+
+/* {{{ arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_lookupnet, 0, 0, 4)
+    ZEND_ARG_INFO(0, dev)
+    ZEND_ARG_INFO(1, net)
+    ZEND_ARG_INFO(1, mask)
     ZEND_ARG_INFO(1, errbuf)
 ZEND_END_ARG_INFO()
 
@@ -62,17 +78,27 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_datalink, 0, 0, 1)
     ZEND_ARG_INFO(0, pcap)
 ZEND_END_ARG_INFO()
 
+/* {{{ arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_compile, 0, 0, 5)
+    ZEND_ARG_INFO(1, pcap_handle)
+    ZEND_ARG_INFO(1, filter_handle)
+    ZEND_ARG_INFO(0, filter_string)
+    ZEND_ARG_INFO(0, optimize)
+    ZEND_ARG_INFO(0, netmask)
+ZEND_END_ARG_INFO()
+
 
 /* {{{ pcap_functions[]
  *
  * Every user visible function must have an entry in pcap_functions[].
  */
 const zend_function_entry pcap_functions[] = {
-	PHP_FE(confirm_pcap_compiled,	NULL)		/* For testing, remove later. */
 	PHP_FE(pcap_lib_version,    NULL)
     PHP_FE(pcap_lookupdev,  arginfo_pcap_lookupdev)
+    PHP_FE(pcap_lookupnet,  arginfo_pcap_lookupnet)
     PHP_FE(pcap_open_live,  arginfo_pcap_open_live)
     PHP_FE(pcap_datalink,  arginfo_pcap_datalink)
+    PHP_FE(pcap_compile,  arginfo_pcap_compile)
 	PHP_FE_END	/* Must be the last line in pcap_functions[] */
 };
 /* }}} */
@@ -132,8 +158,15 @@ PHP_MINIT_FUNCTION(pcap)
     le_pcap_resource = zend_register_list_destructors_ex(
         pcap_destruction_handler,
         NULL,
-        le_pcap_resource_name,
-        module_number
+        LE_PCAP_RESOURCE_NAME,
+        0
+    );
+
+    le_pcap_filter_resource = zend_register_list_destructors_ex(
+        pcap_filter_destruction_handler,
+        NULL,
+        LE_PCAP_FILTER_RESOURCE_NAME,
+        1
     );
 
 	return SUCCESS;
@@ -183,31 +216,18 @@ PHP_MINFO_FUNCTION(pcap)
 }
 /* }}} */
 
+
+/* Makes sure that the pcap_handle will get closed on PHP shutdown */
 void pcap_destruction_handler(zend_rsrc_list_entry *rsrc TSRMLS_DC) {
     pcap_resource *resource = (pcap_resource *) rsrc->ptr;
     pcap_close(resource->pcap_handle);
+    php_printf("destruct");
 }
 
-
-/* Remove the following function when you have succesfully modified config.m4
-   so that your module can be compiled into PHP, it exists only for testing
-   purposes. */
-
-/* Every user-visible function in PHP should document itself in the source */
-/* {{{ proto string confirm_pcap_compiled(string arg)
-   Return a string to confirm that the module is compiled in */
-PHP_FUNCTION(confirm_pcap_compiled)
-{
-	char *arg = NULL;
-	int arg_len, len;
-	char *strg;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &arg, &arg_len) == FAILURE) {
-		return;
-	}
-
-	len = spprintf(&strg, 0, "Congratulations! You have successfully modified ext/%.78s/config.m4. Module %.78s is now compiled into PHP.", "pcap", arg);
-	RETURN_STRINGL(strg, len, 0);
+/* Makes sure that the pcap_filter_handle will get closed on PHP shutdown */
+void pcap_filter_destruction_handler(zend_rsrc_list_entry *rsrc TSRMLS_DC) {
+    pcap_filter_resource *resource = (pcap_filter_resource *) rsrc->ptr;
+//    pcap_close(resource->program_handle);
 }
 
 
@@ -236,7 +256,6 @@ PHP_FUNCTION(pcap_lookupdev)
         RETURN_FALSE;
     }
 
-
     convert_to_null(userland_errbuf);
 
     dev = pcap_lookupdev(errbuf);
@@ -249,6 +268,44 @@ PHP_FUNCTION(pcap_lookupdev)
 }
 
 
+PHP_FUNCTION(pcap_lookupnet)
+{
+    char *dev, errbuf[PCAP_ERRBUF_SIZE];
+    zval *userland_net;
+    zval *userland_mask;
+    zval *userland_errbuf;
+    int devlen;
+    bpf_u_int32 net, mask;
+    int ret;
+
+    if(zend_parse_parameters(
+        ZEND_NUM_ARGS() TSRMLS_CC,
+        "szz|z", 
+        &dev, &devlen,
+        &userland_net,
+        &userland_mask,
+        &userland_errbuf
+    ) != SUCCESS) {
+        RETURN_FALSE;
+    }
+
+    convert_to_null(userland_net);
+    convert_to_null(userland_mask);
+    convert_to_null(userland_errbuf);
+
+    ret = pcap_lookupnet(dev, &net, &mask, errbuf);
+    ZVAL_STRING(userland_errbuf, errbuf, 1);
+   
+    if(ret == 0) {
+        ZVAL_LONG(userland_net, net);
+        ZVAL_LONG(userland_mask, mask);
+    }
+    
+    RETURN_LONG(ret);
+}
+
+/* {{{ proto int pcap_datalink(string $dev, int $snaplen, int $promisc, int $to_ms[, string &$errbuf])
+   open a device for capturing */
 PHP_FUNCTION(pcap_open_live)
 {
     char *dev, errbuf[PCAP_ERRBUF_SIZE];
@@ -268,10 +325,12 @@ PHP_FUNCTION(pcap_open_live)
         RETURN_FALSE;
     }
 
+    convert_to_null(userland_errbuf);
+
     pcap_resource = emalloc(sizeof(pcap_resource));
     pcap_resource->pcap_handle = pcap_open_live(dev, snaplen, promisc, to_ms, errbuf);
+    ZVAL_STRING(userland_errbuf, errbuf, 1);
     if(pcap_resource->pcap_handle == NULL) {
-        ZVAL_STRING(userland_errbuf, errbuf, 1);
         RETURN_FALSE;
     } else {
         ZEND_REGISTER_RESOURCE(return_value, pcap_resource, le_pcap_resource);
@@ -279,13 +338,15 @@ PHP_FUNCTION(pcap_open_live)
 }
 
 
+/* {{{ proto int pcap_datalink(resource $pcap_handle)
+   Get the link-layer header type */
 PHP_FUNCTION(pcap_datalink)
 {
-
     pcap_resource *resource;
     int datalink;
     zval *handle = NULL;
 
+    // only a single resource is expected as params
     if(zend_parse_parameters(
         ZEND_NUM_ARGS() TSRMLS_CC,
         "r",
@@ -294,18 +355,89 @@ PHP_FUNCTION(pcap_datalink)
         RETURN_FALSE;
     }
 
-
+    // fetch pcap_resource from Zend
     ZEND_FETCH_RESOURCE(
         resource,
         pcap_resource*,
         &handle,
         -1,
-        le_pcap_resource_name,
+        LE_PCAP_RESOURCE_NAME,
         le_pcap_resource
     );
 
+    // get the datalink type and assign it to the php return value
     datalink = pcap_datalink(resource->pcap_handle);
     RETURN_LONG(datalink);
+}
+
+
+PHP_FUNCTION(pcap_compile)
+{
+    pcap_resource *resource;
+    pcap_filter_resource *filter_resource;
+    struct bpf_program *fp;
+    const char *filter_str;
+    int optimize, filter_str_len, ret;
+    bpf_u_int32 netmask;
+    zval *pcap_handle, *filter_handle;
+    char *errbuf[PCAP_ERRBUF_SIZE];
+    
+
+    // only a single resource is expected as params
+    if(zend_parse_parameters(
+        ZEND_NUM_ARGS() TSRMLS_CC,
+        "zzsll",
+        &pcap_handle,
+        &filter_handle,
+        &filter_str, &filter_str_len,
+        &optimize,
+        &netmask
+    ) != SUCCESS) { 
+        RETURN_FALSE;
+    }
+
+
+    // fetch pcap_resource from Zend
+    ZEND_FETCH_RESOURCE(
+        resource,
+        pcap_resource*,
+        &pcap_handle,
+        -1,
+        LE_PCAP_RESOURCE_NAME,
+        le_pcap_resource
+    );
+
+    // convert the user land reference to NULL
+    convert_to_null(filter_handle);
+
+    // initialize the fp pointer
+    fp = emalloc(sizeof(struct bpf_program));
+
+    ret = pcap_compile(
+        resource->pcap_handle,
+        fp,
+        filter_str,
+        optimize,
+        netmask
+    );
+
+    if(ret == -1) {
+        RETURN_LONG(ret);
+        return;
+    } else {
+        /* all is working fine. we can create the filter resource and
+           pass it back to the user land */
+        filter_resource =  emalloc(sizeof(pcap_filter_resource));
+        filter_resource->program_handle = fp;
+
+        ZEND_REGISTER_RESOURCE(
+            filter_handle,
+            filter_resource,
+            le_pcap_filter_resource
+        );
+
+        RETURN_LONG(ret); 
+    }
 }
 
 

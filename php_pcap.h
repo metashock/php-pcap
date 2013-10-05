@@ -39,6 +39,7 @@ extern zend_module_entry pcap_module_entry;
 #endif
 
 void pcap_destruction_handler(zend_rsrc_list_entry *rsrc TSRMLS_DC);
+void pcap_filter_destruction_handler(zend_rsrc_list_entry *rsrc TSRMLS_DC);
 
 PHP_MINIT_FUNCTION(pcap);
 PHP_MSHUTDOWN_FUNCTION(pcap);
@@ -46,12 +47,14 @@ PHP_RINIT_FUNCTION(pcap);
 PHP_RSHUTDOWN_FUNCTION(pcap);
 PHP_MINFO_FUNCTION(pcap);
 
-PHP_FUNCTION(confirm_pcap_compiled);	/* For testing, remove later. */
 PHP_FUNCTION(pcap_datalink);
 PHP_FUNCTION(pcap_lib_version);
+PHP_FUNCTION(pcap_compile);
 //PHP_FUNCTION(pcap_create());
 PHP_FUNCTION(pcap_lookupdev);
+PHP_FUNCTION(pcap_lookupnet);
 PHP_FUNCTION(pcap_open_live);
+
 
 /* 
   	Declare any global variables you may need between the BEGIN
