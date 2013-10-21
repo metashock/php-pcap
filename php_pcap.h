@@ -53,7 +53,9 @@ PHP_FUNCTION(pcap_compile);
 //PHP_FUNCTION(pcap_create());
 PHP_FUNCTION(pcap_lookupdev);
 PHP_FUNCTION(pcap_lookupnet);
+PHP_FUNCTION(pcap_next);
 PHP_FUNCTION(pcap_open_live);
+PHP_FUNCTION(pcap_setfilter);
 
 
 /* 
