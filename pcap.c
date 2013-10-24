@@ -509,6 +509,9 @@ PHP_FUNCTION(pcap_setfilter) {
 PHP_FUNCTION(pcap_next) {
 
     zval *pcap_handle, *userland_header;
+    /* we need an additional container for the 
+     * timeval struct of &header */
+    zval *userland_timeval;
     pcap_resource *resource;
     int ret;
 
@@ -534,18 +537,35 @@ PHP_FUNCTION(pcap_next) {
 
     struct pcap_pkthdr header;
     const u_char *data;
+    char *_data;
     data = pcap_next(resource->pcap_handle, &header);
+    _data = (char *)data;    
 
     if(data == NULL) {
-        php_printf("error: %s\n", pcap_geterr(resource->pcap_handle));
-        RETURN_FALSE;
+        RETURN_NULL();
     }
 
-    convert_to_string(return_value);
-    Z_STRVAL_P(return_value) = data;
-    Z_STRLEN_P(return_value) = header.len;
-}
+    /* initialize the userland_header which has been passed by reference */
+    convert_to_null(userland_header);
+    ALLOC_INIT_ZVAL(userland_timeval);
 
+    array_init(userland_header);
+    array_init(userland_timeval);
+
+    add_assoc_long(userland_timeval, "tv_sec", header.ts.tv_sec);
+    add_assoc_long(userland_timeval, "tv_usec", header.ts.tv_usec);
+
+    add_assoc_zval(userland_header, "ts", userland_timeval);
+    add_assoc_long(userland_header, "len", header.len);
+    add_assoc_long(userland_header, "caplen", (long) (header.caplen));
+
+    /* return the data as binary string */
+    /*    MAKE_STD_ZVAL(return_value);  */
+    return_value->type = IS_STRING;
+    /* estrndup() because it is a binary string */
+    return_value->value.str.val = estrndup(_data, header.caplen);
+    return_value->value.str.len = header.caplen;
+}
 
 PHP_FUNCTION(pcap_geterr) {
     
