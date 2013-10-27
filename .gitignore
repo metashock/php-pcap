@@ -1,0 +1,42 @@
+# GNU build artefacts
+.deps
+.libs/
+.vagrant/
+Makefile
+Makefile.fragments
+Makefile.global
+Makefile.objects
+acinclude.m4
+aclocal.m4
+autom4te.cache/
+build.sh
+build/
+config.guess
+config.h
+config.h.in
+config.log
+config.nice
+config.status
+config.sub
+configure
+configure.in
+install-sh
+libtool
+ltmain.sh
+manifest.pp
+missing
+mkinstalldirs
+modules/
+pcap.la
+pcap.lo
+test.pcap
+pcap.loT
+config.h.in~
+.gdbinit
+
+# Local wrapper for debugging version of PHP
+php
+
+# if gdb history is stored per folder
+.gdb_history
+

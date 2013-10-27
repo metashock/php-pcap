@@ -27,8 +27,8 @@
 #include "ext/standard/info.h"
 #include "php_pcap.h"
 
-#define LE_PCAP_RESOURCE_NAME "pcap handle"
-#define LE_PCAP_FILTER_RESOURCE_NAME "pcap filter"
+#define LE_PCAP_RESOURCE_NAME "pcap"
+#define LE_PCAP_FILTER_RESOURCE_NAME "pcap-filter"
 
 /* resource types */
 typedef struct {
@@ -73,10 +73,25 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_open_live, 0, 0, 5)
     ZEND_ARG_INFO(1, errbuf)
 ZEND_END_ARG_INFO()
 
+
+/* {{{ arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_open_offline, 0, 0, 2)
+    ZEND_ARG_INFO(0, fname)
+    ZEND_ARG_INFO(1, errbuf)
+ZEND_END_ARG_INFO()
+
+
+/* {{{ arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_close, 0, 0, 1)
+    ZEND_ARG_INFO(0, pcap_handle)
+ZEND_END_ARG_INFO()
+
+
 /* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_datalink, 0, 0, 1)
     ZEND_ARG_INFO(0, pcap)
 ZEND_END_ARG_INFO()
+
 
 /* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_compile, 0, 0, 5)
@@ -87,11 +102,13 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_compile, 0, 0, 5)
     ZEND_ARG_INFO(0, netmask)
 ZEND_END_ARG_INFO()
 
+
 /* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_setfilter, 0, 0, 2)
     ZEND_ARG_INFO(0, pcap_handle)
     ZEND_ARG_INFO(1, filter_handle)
 ZEND_END_ARG_INFO()
+
 
 /* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_next, 0, 0, 2)
@@ -110,6 +127,8 @@ const zend_function_entry pcap_functions[] = {
     PHP_FE(pcap_lookupnet,  arginfo_pcap_lookupnet)
     PHP_FE(pcap_next, arginfo_pcap_next)
     PHP_FE(pcap_open_live,  arginfo_pcap_open_live)
+    PHP_FE(pcap_open_offline,  arginfo_pcap_open_offline)
+    PHP_FE(pcap_close,  arginfo_pcap_close)
     PHP_FE(pcap_datalink,  arginfo_pcap_datalink)
     PHP_FE(pcap_compile,  arginfo_pcap_compile)
     PHP_FE(pcap_setfilter,  arginfo_pcap_setfilter)
@@ -234,7 +253,12 @@ PHP_MINFO_FUNCTION(pcap)
 /* Makes sure that the pcap_handle will get closed on PHP shutdown */
 void pcap_destruction_handler(zend_rsrc_list_entry *rsrc TSRMLS_DC) {
     pcap_resource *resource = (pcap_resource *) rsrc->ptr;
+   
+    /* Close the pcap handle */
     pcap_close(resource->pcap_handle);
+
+    /* Don't miss to free allocated memory */
+    efree(resource);
 }
 
 /* Makes sure that the pcap_filter_handle will get closed on PHP shutdown */
@@ -276,7 +300,7 @@ PHP_FUNCTION(pcap_lookupdev)
         ZVAL_STRING(userland_errbuf, errbuf, 1);
         RETURN_FALSE;
     } else { 
-        RETURN_STRING(dev,0);
+        RETURN_STRING(dev, 1);
     }
 }
 
@@ -351,8 +375,83 @@ PHP_FUNCTION(pcap_open_live)
 }
 
 
+/* {{{ proto resource pcap_open_offline(string $fname, string &errbuf)
+       Open a saved capture file for reading */
+PHP_FUNCTION(pcap_open_offline)
+{
+    char *fname, *fname_safe, errbuf[PCAP_ERRBUF_SIZE];
+    int fname_len;
+    pcap_resource* pcap_resource;
+    zval *userland_errbuf;
+
+    // Expecting a filename and the errbuf reference
+    if(zend_parse_parameters(
+        ZEND_NUM_ARGS() TSRMLS_CC,
+        "sz",
+        &fname, &fname_len,
+        &userland_errbuf
+    ) != SUCCESS) {
+        RETURN_FALSE;
+    }
+
+    /* Initialize userland_errbuf which has been passed 
+       by reference. NULL is the default value */
+    convert_to_null(userland_errbuf);
+
+    /* Allocate memory for a pcap_resource */
+    pcap_resource = emalloc(sizeof(pcap_resource));
+
+    /* Call pcap function */
+    pcap_resource->pcap_handle = pcap_open_offline(fname, errbuf);
+
+    if(pcap_resource->pcap_handle == NULL) {
+        /* Copy the error message to userland */
+        ZVAL_STRING(userland_errbuf, errbuf, 1);
+        /* Don't miss to free the previously allocated memory */
+        efree(pcap_resource);
+
+        RETURN_FALSE;
+    } else {
+        zval_dtor(return_value);
+        ZEND_REGISTER_RESOURCE(return_value, pcap_resource, le_pcap_resource);
+//        efree(pcap_resource);
+    }
+}
+
+
+/* */
+PHP_FUNCTION(pcap_close)
+{
+    pcap_resource *resource;
+    zval *pcap_argument;
+
+    // A pcap resource is expected as argument
+    if(zend_parse_parameters(
+        ZEND_NUM_ARGS() TSRMLS_CC,
+        "z",
+        &pcap_argument
+    ) != SUCCESS) {
+        RETURN_FALSE;
+    }
+
+    // Fetch pcap_resource from Zend
+    ZEND_FETCH_RESOURCE(
+        resource,
+        pcap_resource*,
+        &pcap_argument,
+        -1,
+        LE_PCAP_RESOURCE_NAME,
+        le_pcap_resource
+    );
+
+    zend_list_delete(Z_LVAL_P(pcap_argument));
+
+    RETURN_TRUE;
+}
+
+
 /* {{{ proto int pcap_datalink(resource $pcap_handle)
-   Get the link-layer header type */
+       Get the link-layer header type */
 PHP_FUNCTION(pcap_datalink)
 {
     pcap_resource *resource;
@@ -560,7 +659,6 @@ PHP_FUNCTION(pcap_next) {
     add_assoc_long(userland_header, "caplen", (long) (header.caplen));
 
     /* return the data as binary string */
-    /*    MAKE_STD_ZVAL(return_value);  */
     return_value->type = IS_STRING;
     /* estrndup() because it is a binary string */
     return_value->value.str.val = estrndup(_data, header.caplen);
