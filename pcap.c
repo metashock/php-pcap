@@ -73,10 +73,19 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_open_live, 0, 0, 5)
     ZEND_ARG_INFO(1, errbuf)
 ZEND_END_ARG_INFO()
 
+
+/* {{{ arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_open_offline, 0, 0, 2)
+    ZEND_ARG_INFO(0, fname)
+    ZEND_ARG_INFO(1, errbuf)
+ZEND_END_ARG_INFO()
+
+
 /* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_datalink, 0, 0, 1)
     ZEND_ARG_INFO(0, pcap)
 ZEND_END_ARG_INFO()
+
 
 /* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_compile, 0, 0, 5)
@@ -87,11 +96,13 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_compile, 0, 0, 5)
     ZEND_ARG_INFO(0, netmask)
 ZEND_END_ARG_INFO()
 
+
 /* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_setfilter, 0, 0, 2)
     ZEND_ARG_INFO(0, pcap_handle)
     ZEND_ARG_INFO(1, filter_handle)
 ZEND_END_ARG_INFO()
+
 
 /* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_next, 0, 0, 2)
@@ -110,6 +121,7 @@ const zend_function_entry pcap_functions[] = {
     PHP_FE(pcap_lookupnet,  arginfo_pcap_lookupnet)
     PHP_FE(pcap_next, arginfo_pcap_next)
     PHP_FE(pcap_open_live,  arginfo_pcap_open_live)
+    PHP_FE(pcap_open_offline,  arginfo_pcap_open_offline)
     PHP_FE(pcap_datalink,  arginfo_pcap_datalink)
     PHP_FE(pcap_compile,  arginfo_pcap_compile)
     PHP_FE(pcap_setfilter,  arginfo_pcap_setfilter)
@@ -351,8 +363,42 @@ PHP_FUNCTION(pcap_open_live)
 }
 
 
+/* {{{ proto resource pcap_open_offline(string $fname, string &errbuf)
+       Open a saved capture file for reading */
+PHP_FUNCTION(pcap_open_offline)
+{
+    char *fname, *fname_safe, errbuf[PCAP_ERRBUF_SIZE];
+    int fname_len;
+    pcap_resource* pcap_resource;
+    zval *userland_errbuf;
+
+    // only a single resource is expected as params
+    if(zend_parse_parameters(
+        ZEND_NUM_ARGS() TSRMLS_CC,
+        "sz",
+        &fname, &fname_len,
+        &userland_errbuf
+    ) != SUCCESS) {
+        RETURN_FALSE;
+    }
+
+    // we need to add a null byte at the end of the string
+    fname_safe = (char *) emalloc(fname_len + 1);
+    strcat(fname_safe, fname);
+
+    pcap_resource = emalloc(sizeof(pcap_resource));
+    pcap_resource->pcap_handle = pcap_open_offline(fname_safe, errbuf);
+    ZVAL_STRING(userland_errbuf, errbuf, 1);
+    if(pcap_resource->pcap_handle == NULL) {
+        RETURN_FALSE;
+    } else {
+        ZEND_REGISTER_RESOURCE(return_value, pcap_resource, le_pcap_resource);
+    }
+}
+
+
 /* {{{ proto int pcap_datalink(resource $pcap_handle)
-   Get the link-layer header type */
+       Get the link-layer header type */
 PHP_FUNCTION(pcap_datalink)
 {
     pcap_resource *resource;
@@ -560,7 +606,6 @@ PHP_FUNCTION(pcap_next) {
     add_assoc_long(userland_header, "caplen", (long) (header.caplen));
 
     /* return the data as binary string */
-    /*    MAKE_STD_ZVAL(return_value);  */
     return_value->type = IS_STRING;
     /* estrndup() because it is a binary string */
     return_value->value.str.val = estrndup(_data, header.caplen);

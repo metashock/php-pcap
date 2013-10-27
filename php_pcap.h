@@ -55,6 +55,7 @@ PHP_FUNCTION(pcap_lookupdev);
 PHP_FUNCTION(pcap_lookupnet);
 PHP_FUNCTION(pcap_next);
 PHP_FUNCTION(pcap_open_live);
+PHP_FUNCTION(pcap_open_offline);
 PHP_FUNCTION(pcap_setfilter);
 
 
