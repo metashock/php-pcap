@@ -1,0 +1,9 @@
+{
+  "name": "vagrant",
+  "run_list": [
+	"recipe[libpcap-dev]",
+    "recipe[nmap]",
+	"recipe[php]",
+	"recipe[php-pcap]"
+  ]
+}
