@@ -56,8 +56,8 @@ PHP_FUNCTION(pcap_lookupnet);
 PHP_FUNCTION(pcap_next);
 PHP_FUNCTION(pcap_open_live);
 PHP_FUNCTION(pcap_open_offline);
+PHP_FUNCTION(pcap_close);
 PHP_FUNCTION(pcap_setfilter);
-
 
 /* 
   	Declare any global variables you may need between the BEGIN

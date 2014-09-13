@@ -1,0 +1,6 @@
+In order to sniff packages as a non root user, you need to assign the following permissions:
+
+	sudo setcap cap_net_raw,cap_net_admin=eip /usr/local/bin/php
+
+
+

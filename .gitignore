@@ -30,6 +30,12 @@ modules/
 pcap.la
 pcap.lo
 test.pcap
+pcap.loT
+config.h.in~
+.gdbinit
+
+# Local wrapper for debugging version of PHP
+php
 
 # if gdb history is stored per folder
 .gdb_history
