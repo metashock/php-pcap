@@ -117,6 +117,12 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_next, 0, 0, 2)
 ZEND_END_ARG_INFO()
 
 
+/* {{{ arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_geterr, 0, 0, 1)
+    ZEND_ARG_INFO(0, pcap_handle)
+ZEND_END_ARG_INFO()
+
+
 /* {{{ pcap_functions[]
  *
  * Every user visible function must have an entry in pcap_functions[].
@@ -132,6 +138,7 @@ const zend_function_entry pcap_functions[] = {
     PHP_FE(pcap_datalink,  arginfo_pcap_datalink)
     PHP_FE(pcap_compile,  arginfo_pcap_compile)
     PHP_FE(pcap_setfilter,  arginfo_pcap_setfilter)
+    PHP_FE(pcap_geterr,  arginfo_pcap_geterr)
 	PHP_FE_END	/* Must be the last line in pcap_functions[] */
 };
 /* }}} */
@@ -665,8 +672,36 @@ PHP_FUNCTION(pcap_next) {
     return_value->value.str.len = header.caplen;
 }
 
+/* {{{ proto string pcap_setfilter(resource $pcap_handle, array &header))
+   Returns  the  error  text  pertaining  to the last pcap library error */
 PHP_FUNCTION(pcap_geterr) {
-    
+
+    zval *pcap_handle;
+    pcap_resource *resource;
+    int ret;
+    char *error;
+
+    // only a single resource is expected as params
+    if(zend_parse_parameters(
+        ZEND_NUM_ARGS() TSRMLS_CC,
+        "z",
+        &pcap_handle
+    ) != SUCCESS) { 
+        RETURN_FALSE;
+    }
+
+    // Fetch the pcap_resource from Zend engine
+    ZEND_FETCH_RESOURCE(
+        resource,
+        pcap_resource*,
+        &pcap_handle,
+        -1,
+        LE_PCAP_RESOURCE_NAME,
+        le_pcap_resource
+    );
+
+    error = pcap_geterr(resource->pcap_handle);
+    RETURN_STRING(error, 1);
 }
 
 

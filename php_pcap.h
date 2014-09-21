@@ -58,6 +58,7 @@ PHP_FUNCTION(pcap_open_live);
 PHP_FUNCTION(pcap_open_offline);
 PHP_FUNCTION(pcap_close);
 PHP_FUNCTION(pcap_setfilter);
+PHP_FUNCTION(pcap_geterr);
 
 /* 
   	Declare any global variables you may need between the BEGIN
