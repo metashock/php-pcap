@@ -41,6 +41,13 @@ extern zend_module_entry pcap_module_entry;
 void pcap_destruction_handler(zend_rsrc_list_entry *rsrc TSRMLS_DC);
 void pcap_filter_destruction_handler(zend_rsrc_list_entry *rsrc TSRMLS_DC);
 
+/* Callback function passed to pcap_dispatch */
+void pcap_dispatch_callback (
+    u_char *user,
+    const struct pcap_pkthdr *h,
+    const u_char *bytes
+);
+
 PHP_MINIT_FUNCTION(pcap);
 PHP_MSHUTDOWN_FUNCTION(pcap);
 PHP_RINIT_FUNCTION(pcap);
@@ -54,6 +61,7 @@ PHP_FUNCTION(pcap_compile);
 PHP_FUNCTION(pcap_lookupdev);
 PHP_FUNCTION(pcap_lookupnet);
 PHP_FUNCTION(pcap_next);
+PHP_FUNCTION(pcap_dispatch);
 PHP_FUNCTION(pcap_open_live);
 PHP_FUNCTION(pcap_open_offline);
 PHP_FUNCTION(pcap_close);

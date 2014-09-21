@@ -12,11 +12,9 @@
   | obtain it through the world-wide-web, please send a note to          |
   | license@php.net so we can mail you a copy immediately.               |
   +----------------------------------------------------------------------+
-  | Author: Thorsten Heymann <hek2mgl@metashock.net>                     |
+  | Author: Thorsten Heymann <thorsten@metashock.net>                    |
   +----------------------------------------------------------------------+
 */
-
-/* $Id: header 321634 2012-01-01 13:15:04Z felipe $ */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -48,6 +46,12 @@ ZEND_DECLARE_MODULE_GLOBALS(pcap)
 /* True global resources - no need for thread safety here */
 static int le_pcap_resource;
 static int le_pcap_filter_resource;
+
+
+/* Those are required to store the callback handlers for pcap_dispatch */
+zend_fcall_info         dispatch_callback_fci;
+zend_fcall_info_cache   dispatch_callback_fcc;
+
 
 /* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_lookupdev, 0, 0, 2)
@@ -118,6 +122,15 @@ ZEND_END_ARG_INFO()
 
 
 /* {{{ arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_dispatch, 0, 0, 4)
+    ZEND_ARG_INFO(0, pcap_handle)
+    ZEND_ARG_INFO(0, cnt)
+    ZEND_ARG_INFO(0, callback)
+    ZEND_ARG_INFO(0, user)
+ZEND_END_ARG_INFO()
+
+
+/* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_geterr, 0, 0, 1)
     ZEND_ARG_INFO(0, pcap_handle)
 ZEND_END_ARG_INFO()
@@ -132,6 +145,7 @@ const zend_function_entry pcap_functions[] = {
     PHP_FE(pcap_lookupdev,  arginfo_pcap_lookupdev)
     PHP_FE(pcap_lookupnet,  arginfo_pcap_lookupnet)
     PHP_FE(pcap_next, arginfo_pcap_next)
+    PHP_FE(pcap_dispatch, arginfo_pcap_dispatch)
     PHP_FE(pcap_open_live,  arginfo_pcap_open_live)
     PHP_FE(pcap_open_offline,  arginfo_pcap_open_offline)
     PHP_FE(pcap_close,  arginfo_pcap_close)
@@ -348,6 +362,7 @@ PHP_FUNCTION(pcap_lookupnet)
     RETURN_LONG(ret);
 }
 
+
 /* {{{ proto int pcap_datalink(string $dev, int $snaplen, int $promisc, int $to_ms[, string &$errbuf])
    open a device for capturing */
 PHP_FUNCTION(pcap_open_live)
@@ -419,9 +434,7 @@ PHP_FUNCTION(pcap_open_offline)
 
         RETURN_FALSE;
     } else {
-        zval_dtor(return_value);
         ZEND_REGISTER_RESOURCE(return_value, pcap_resource, le_pcap_resource);
-//        efree(pcap_resource);
     }
 }
 
@@ -610,8 +623,9 @@ PHP_FUNCTION(pcap_setfilter) {
     RETURN_LONG(ret);
 }
 
-/* {{{ proto string pcap_setfilter(resource $pcap_handle, array &header))
-   Set the filter */
+
+/* {{{ proto string pcap_next(resource $pcap_handle, array &header))
+   Read the next packet from pcap_handle */
 PHP_FUNCTION(pcap_next) {
 
     zval *pcap_handle, *userland_header;
@@ -672,6 +686,119 @@ PHP_FUNCTION(pcap_next) {
     return_value->value.str.len = header.caplen;
 }
 
+/* {{{ proto boolean pcap_dispatch(resource $pcap_handle, callback $callback))
+   Calls $callback for every packet */
+PHP_FUNCTION(pcap_dispatch) {
+
+    zval *pcap_handle;
+    pcap_resource *resource;
+    int cnt;
+    int user_len = -1;
+    char *user = NULL;
+    int n;
+
+
+    /* Fetching parameters implicitly sets the global
+       reference to the dispatch_callback function */
+    if(zend_parse_parameters(
+        ZEND_NUM_ARGS() TSRMLS_CC,
+        "zlf|s",
+        &pcap_handle,
+        &cnt,
+        &dispatch_callback_fci,
+        &dispatch_callback_fcc,
+        &user,
+        &user_len
+    ) != SUCCESS) { 
+        RETURN_FALSE;
+    }
+
+    // Fetch pcap_resource from Zend
+    ZEND_FETCH_RESOURCE(
+        resource,
+        pcap_resource*,
+        &pcap_handle,
+        -1,
+        LE_PCAP_RESOURCE_NAME,
+        le_pcap_resource
+    );
+
+    /* Call pcap dispatch */
+    n = pcap_dispatch(
+        resource->pcap_handle,
+        cnt,
+        pcap_dispatch_callback,
+        (u_char *)user
+    );
+
+    RETURN_LONG(n);
+}
+
+/* Called by libpcap. Calls the userland callback 
+   and passes packet data to it */
+void pcap_dispatch_callback (
+    u_char *user,
+    const struct pcap_pkthdr *h,
+    const u_char *bytes
+) {
+
+	zval **callback_args[4];
+	zval *retval_ptr = NULL;
+
+    /* Prepare callback arguments */
+
+    zval *header;
+    zval *timeval;
+    zval *data;
+    zval *arg_user;
+
+    MAKE_STD_ZVAL(header);
+    MAKE_STD_ZVAL(timeval);
+    MAKE_STD_ZVAL(data);
+    MAKE_STD_ZVAL(arg_user);
+
+    array_init(header);
+    array_init(timeval);
+
+    add_assoc_long(timeval, "tv_sec", h->ts.tv_sec);
+    add_assoc_long(timeval, "tv_usec", h->ts.tv_usec);
+
+    add_assoc_zval(header, "ts", timeval);
+    add_assoc_long(header, "len", h->len);
+    add_assoc_long(header, "caplen", (long) (h->caplen));
+
+    /* We need to pass data len to ZVAL_STRINGL since it 
+       is binary data, not delimited by a zero byte */
+    ZVAL_STRINGL(data, bytes, h->caplen, 1);
+
+    ZVAL_STRING(arg_user, user, 0);
+
+    callback_args[0] = &arg_user;
+    callback_args[1] = &header;
+    callback_args[2] = &timeval;
+    callback_args[3] = &data;
+
+    dispatch_callback_fci.param_count = 4;
+	dispatch_callback_fci.params = callback_args;
+	dispatch_callback_fci.retval_ptr_ptr = &retval_ptr;
+	dispatch_callback_fci.no_separation = 0;
+
+	if (zend_call_function(
+        &dispatch_callback_fci,
+        &dispatch_callback_fcc TSRMLS_CC
+    ) == SUCCESS && retval_ptr) {
+
+    }
+
+    /* Free zvals */
+    zval_ptr_dtor(&retval_ptr);
+    zval_ptr_dtor(&arg_user);
+    zval_ptr_dtor(&header);
+    zval_ptr_dtor(&timeval);
+    zval_ptr_dtor(&data);
+}
+
+
 /* {{{ proto string pcap_setfilter(resource $pcap_handle, array &header))
    Returns  the  error  text  pertaining  to the last pcap library error */
 PHP_FUNCTION(pcap_geterr) {
@@ -703,7 +830,6 @@ PHP_FUNCTION(pcap_geterr) {
     error = pcap_geterr(resource->pcap_handle);
     RETURN_STRING(error, 1);
 }
-
 
 /* }}} */
 /* The previous line is meant for vim and emacs, so it can correctly fold and 
