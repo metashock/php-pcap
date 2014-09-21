@@ -131,6 +131,13 @@ ZEND_END_ARG_INFO()
 
 
 /* {{{ arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_inject, 0, 0, 2)
+    ZEND_ARG_INFO(0, pcap_handle)
+    ZEND_ARG_INFO(0, buffer)
+ZEND_END_ARG_INFO()
+
+
+/* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_geterr, 0, 0, 1)
     ZEND_ARG_INFO(0, pcap_handle)
 ZEND_END_ARG_INFO()
@@ -146,6 +153,7 @@ const zend_function_entry pcap_functions[] = {
     PHP_FE(pcap_lookupnet,  arginfo_pcap_lookupnet)
     PHP_FE(pcap_next, arginfo_pcap_next)
     PHP_FE(pcap_dispatch, arginfo_pcap_dispatch)
+    PHP_FE(pcap_inject, arginfo_pcap_inject)
     PHP_FE(pcap_open_live,  arginfo_pcap_open_live)
     PHP_FE(pcap_open_offline,  arginfo_pcap_open_offline)
     PHP_FE(pcap_close,  arginfo_pcap_close)
@@ -796,6 +804,43 @@ void pcap_dispatch_callback (
     zval_ptr_dtor(&header);
     zval_ptr_dtor(&timeval);
     zval_ptr_dtor(&data);
+}
+
+
+/* {{{ proto int pcap_inject(resource $pcap_handle, string $buffer))
+   Returns  the  error  text  pertaining  to the last pcap library error */
+PHP_FUNCTION(pcap_inject) {
+
+    zval *pcap_handle;
+    pcap_resource *resource;
+    char *data;
+    int data_len;
+    int n;
+
+    /* Fetching parameters implicitly sets the global
+       reference to the dispatch_callback function */
+    if(zend_parse_parameters(
+        ZEND_NUM_ARGS() TSRMLS_CC,
+        "zs",
+        &pcap_handle,
+        &data,
+        &data_len
+    ) != SUCCESS) { 
+        RETURN_FALSE;
+    }
+
+    // Fetch pcap_resource from Zend
+    ZEND_FETCH_RESOURCE(
+        resource,
+        pcap_resource*,
+        &pcap_handle,
+        -1,
+        LE_PCAP_RESOURCE_NAME,
+        le_pcap_resource
+    );
+
+    n = pcap_inject(resource->pcap_handle, data, data_len);
+    RETURN_LONG(n);
 }
 
 
