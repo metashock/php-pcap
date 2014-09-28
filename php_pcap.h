@@ -59,6 +59,7 @@ PHP_FUNCTION(pcap_lib_version);
 PHP_FUNCTION(pcap_compile);
 //PHP_FUNCTION(pcap_create());
 PHP_FUNCTION(pcap_lookupdev);
+PHP_FUNCTION(pcap_findalldevs);
 PHP_FUNCTION(pcap_lookupnet);
 PHP_FUNCTION(pcap_next);
 PHP_FUNCTION(pcap_dispatch);

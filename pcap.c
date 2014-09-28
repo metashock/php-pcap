@@ -25,6 +25,10 @@
 #include "ext/standard/info.h"
 #include "php_pcap.h"
 
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
 #define LE_PCAP_RESOURCE_NAME "pcap"
 #define LE_PCAP_FILTER_RESOURCE_NAME "pcap-filter"
 
@@ -55,6 +59,13 @@ zend_fcall_info_cache   dispatch_callback_fcc;
 
 /* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_lookupdev, 0, 0, 2)
+    ZEND_ARG_INFO(1, errbuf)
+ZEND_END_ARG_INFO()
+
+
+/* {{{ arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_findalldevs, 0, 0, 2)
+    ZEND_ARG_INFO(1, alldevs)
     ZEND_ARG_INFO(1, errbuf)
 ZEND_END_ARG_INFO()
 
@@ -150,6 +161,7 @@ ZEND_END_ARG_INFO()
 const zend_function_entry pcap_functions[] = {
 	PHP_FE(pcap_lib_version,    NULL)
     PHP_FE(pcap_lookupdev,  arginfo_pcap_lookupdev)
+    PHP_FE(pcap_findalldevs, arginfo_pcap_findalldevs)
     PHP_FE(pcap_lookupnet,  arginfo_pcap_lookupnet)
     PHP_FE(pcap_next, arginfo_pcap_next)
     PHP_FE(pcap_dispatch, arginfo_pcap_dispatch)
@@ -330,6 +342,107 @@ PHP_FUNCTION(pcap_lookupdev)
         RETURN_FALSE;
     } else { 
         RETURN_STRING(dev, 1);
+    }
+}
+
+/* {{{ proto int pcap_findalldevs()
+   open a device for capturing */
+PHP_FUNCTION(pcap_findalldevs)
+{
+    pcap_if_t *alldevsp;
+    pcap_addr_t *addr;
+    char errbuf[PCAP_ERRBUF_SIZE];
+
+    zval *userland_alldevs;
+    zval *userland_errbuf;
+    zval *record;
+    zval *address_record;
+    zval *addresses;
+
+    struct sockaddr_in* sockaddr_in;
+    struct sockaddr_in6* sockaddr_in6;
+
+    if(zend_parse_parameters(
+        ZEND_NUM_ARGS() TSRMLS_CC,
+        "zz", &userland_alldevs, &userland_errbuf
+    ) != SUCCESS) {
+        RETURN_FALSE;
+    }
+
+    convert_to_null(userland_errbuf);
+    array_init(userland_alldevs);
+
+    if(pcap_findalldevs(&alldevsp, errbuf) == -1) {
+        RETURN_FALSE;
+    } else {
+        pcap_if_t *iface = alldevsp;
+
+        while(iface) {
+            ALLOC_INIT_ZVAL(record);
+            array_init(record);
+            add_assoc_string(record, "name", iface->name, 1);
+            if(iface->description) {
+                add_assoc_string(record, "description", iface->description, 1);
+            } else {
+                add_assoc_string(record, "description", "", 1);
+            }
+
+            addr = iface->addresses;
+            ALLOC_INIT_ZVAL(addresses);
+            array_init(addresses);
+            while(addr) {
+                ALLOC_INIT_ZVAL(address_record);
+                array_init(address_record);
+                add_assoc_long(address_record, "sa_family",
+                     addr->addr->sa_family);
+
+                switch(addr->addr->sa_family) {
+                    case AF_INET6:
+                        sockaddr_in6 = (struct sockaddr_in6*) (addr->addr);
+                        char string[INET6_ADDRSTRLEN];
+                        inet_ntop(AF_INET6, sockaddr_in6,
+                            string, INET_ADDRSTRLEN);
+                        add_assoc_string(address_record, "address", string, 1);
+                        /* PHP has defined the AF_* constants as strings.
+                           Therefore we deliver a string too */
+                        add_assoc_string(address_record,
+                            "sa_family", "AF_INET6", 1);
+                    break;
+
+                    case AF_INET:
+                        sockaddr_in = (struct sockaddr_in*) (addr->addr);
+                        add_assoc_string(address_record, "address",
+                            inet_ntoa(sockaddr_in->sin_addr), 1);
+                        /* PHP has defined the AF_* constants as strings.
+                           Therefore we deliver a string too */
+                        add_assoc_string(address_record,
+                            "sa_family", "AF_INET", 1);
+                        break;
+
+                    case AF_PACKET:
+                        /* PHP has defined the AF_* constants as strings.
+                           Therefore we deliver a string too. But not that
+                           AF_PACKET isn't defined by the php core */
+                        add_assoc_string(address_record,
+                            "sa_family", "AF_PAKET", 1);
+                        break;
+
+                    default :
+                        php_error_docref(NULL TSRMLS_CC, E_WARNING,
+                            "Unknown address family: %u. "
+                            "Please post a feature request at "
+                            "https://github.com/metashock/php-pcap/issues\n",
+                            addr->addr->sa_family);
+                }
+
+                add_next_index_zval(addresses, address_record);
+                addr = addr->next;
+            }
+
+            add_assoc_zval(record, "addresses", addresses);
+            add_next_index_zval(userland_alldevs, record);
+            iface = iface->next;
+        }
     }
 }
 
