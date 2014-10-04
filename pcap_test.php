@@ -38,6 +38,17 @@ while($data = pcap_next($pcap, $header)) {
 }
 
 
+$ret = pcap_stats($pcap, $stats);
+if($ret === true) {
+	printf("Stats: %d packets received, %d dropped, %d iface dropped\n",
+		$stats['ps_recv'], $stats['ps_drop'], $stats['ps_ifdrop']);
+} else {
+	echo pcap_geterr($pcap);	
+}
+
+
+
+
 $ret = pcap_close($pcap);
 switch(true) {
 	case $ret === true:
@@ -65,17 +76,27 @@ if(!is_resource($pcap)) {
 	pl("pcap_open_live(): got resource $pcap (type: " . get_resource_type($pcap) . ")");
 }
 
-
-while($data = pcap_next($pcap, $header)) {
+$i = 0;
+while(($data = pcap_next($pcap, $header)) && $i++ < 100) {
 	pl(str_repeat('-', 80));
-#	hexdump($data);
-	$f = Frame_Ethernet::fromstring($data);
-	do {
-		echo $f;
-	} while ($f = $f->subframe());
+	hexdump($data);
+#	$f = Frame_Ethernet::fromstring($data);
+#	do {
+#		echo $f;
+#	} while ($f = $f->subframe());
 	
 //	var_dump($header);
 //	break;
+}
+
+
+
+$ret = pcap_stats($pcap, $stats);
+if($ret === true) {
+	printf("Stats: %d packets received, %d dropped, %d iface dropped\n",
+		$stats['ps_recv'], $stats['ps_drop'], $stats['ps_ifdrop']);
+} else {
+	echo pcap_geterr($pcap);	
 }
 
 

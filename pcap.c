@@ -138,6 +138,13 @@ ZEND_END_ARG_INFO()
 
 
 /* {{{ arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_stats, 0, 0, 2)
+    ZEND_ARG_INFO(0, pcap_handle)
+    ZEND_ARG_INFO(1, stats)
+ZEND_END_ARG_INFO()
+
+
+/* {{{ arginfo */
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pcap_geterr, 0, 0, 1)
     ZEND_ARG_INFO(0, pcap_handle)
 ZEND_END_ARG_INFO()
@@ -160,6 +167,7 @@ const zend_function_entry pcap_functions[] = {
     PHP_FE(pcap_datalink,  arginfo_pcap_datalink)
     PHP_FE(pcap_compile,  arginfo_pcap_compile)
     PHP_FE(pcap_setfilter,  arginfo_pcap_setfilter)
+    PHP_FE(pcap_stats,  arginfo_pcap_stats)
     PHP_FE(pcap_geterr,  arginfo_pcap_geterr)
 	PHP_FE_END	/* Must be the last line in pcap_functions[] */
 };
@@ -486,7 +494,7 @@ PHP_FUNCTION(pcap_datalink)
     int datalink;
     zval *handle = NULL;
 
-    // only a single resource is expected as params
+    // Get params from userland
     if(zend_parse_parameters(
         ZEND_NUM_ARGS() TSRMLS_CC,
         "r",
@@ -495,7 +503,7 @@ PHP_FUNCTION(pcap_datalink)
         RETURN_FALSE;
     }
 
-    // fetch pcap_resource from Zend
+    // Fetch pcap_resource from Zend
     ZEND_FETCH_RESOURCE(
         resource,
         pcap_resource*,
@@ -522,7 +530,7 @@ PHP_FUNCTION(pcap_compile)
     zval *pcap_handle, *filter_handle;
     char *errbuf[PCAP_ERRBUF_SIZE];
 
-    // only a single resource is expected as params
+    // Get params from userland
     if(zend_parse_parameters(
         ZEND_NUM_ARGS() TSRMLS_CC,
         "zzsll",
@@ -535,7 +543,7 @@ PHP_FUNCTION(pcap_compile)
         RETURN_FALSE;
     }
 
-    // fetch pcap_resource from Zend
+    // Fetch pcap_resource from Zend
     ZEND_FETCH_RESOURCE(
         resource,
         pcap_resource*,
@@ -593,7 +601,7 @@ PHP_FUNCTION(pcap_setfilter) {
     pcap_filter_resource *filter_resource;
     int ret;
 
-    // only a single resource is expected as params
+    // Get params from userland
     if(zend_parse_parameters(
         ZEND_NUM_ARGS() TSRMLS_CC,
         "zz",
@@ -603,7 +611,7 @@ PHP_FUNCTION(pcap_setfilter) {
         RETURN_FALSE;
     }
 
-    // fetch pcap_resource from Zend
+    // Fetch pcap_resource from Zend
     ZEND_FETCH_RESOURCE(
         resource,
         pcap_resource*,
@@ -643,7 +651,7 @@ PHP_FUNCTION(pcap_next) {
     pcap_resource *resource;
     int ret;
 
-    // only a single resource is expected as params
+    // Get params from userland
     if(zend_parse_parameters(
         ZEND_NUM_ARGS() TSRMLS_CC,
         "zz",
@@ -653,7 +661,7 @@ PHP_FUNCTION(pcap_next) {
         RETURN_FALSE;
     }
 
-    // fetch pcap_resource from Zend
+    // Fetch pcap_resource from Zend
     ZEND_FETCH_RESOURCE(
         resource,
         pcap_resource*,
@@ -844,7 +852,54 @@ PHP_FUNCTION(pcap_inject) {
 }
 
 
-/* {{{ proto string pcap_setfilter(resource $pcap_handle, array &header))
+/* {{{ proto bool pcap_stats(resource $pcap_handle, array &$stats)
+   Get stats for the current capture */
+PHP_FUNCTION(pcap_stats) {
+
+    zval *pcap_handle;
+    zval *userland_stats;
+    pcap_resource *pcap;
+
+    struct pcap_stat stats;
+    zval *stat_record;
+
+    // Get params from userland
+    if(zend_parse_parameters(
+        ZEND_NUM_ARGS() TSRMLS_CC,
+        "zz",
+        &pcap_handle,
+        &userland_stats
+    ) != SUCCESS) { 
+        RETURN_FALSE;
+    }
+
+    // Fetch pcap_resource from Zend
+    ZEND_FETCH_RESOURCE(
+        pcap,
+        pcap_resource*,
+        &pcap_handle,
+        -1,
+        LE_PCAP_RESOURCE_NAME,
+        le_pcap_resource
+    );
+
+    /* You can obtain an error message using pcap_geterr()
+       if pcap_stats fails */
+    if(pcap_stats(pcap->pcap_handle, &stats) == -1) {
+        RETURN_FALSE;
+    }
+
+    array_init(userland_stats);
+
+    add_assoc_long(userland_stats, "ps_recv", stats.ps_recv);
+    add_assoc_long(userland_stats, "ps_drop", stats.ps_drop);
+    add_assoc_long(userland_stats, "ps_ifdrop", stats.ps_ifdrop);
+
+    RETURN_TRUE;
+}
+
+
+/* {{{ proto string pcap_setfilter(resource $pcap_handle, array &header)
    Returns  the  error  text  pertaining  to the last pcap library error */
 PHP_FUNCTION(pcap_geterr) {
 
@@ -853,7 +908,7 @@ PHP_FUNCTION(pcap_geterr) {
     int ret;
     char *error;
 
-    // only a single resource is expected as params
+    // Get params from userland
     if(zend_parse_parameters(
         ZEND_NUM_ARGS() TSRMLS_CC,
         "z",
